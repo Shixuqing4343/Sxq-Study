@@ -1,0 +1,168 @@
+import numpy as np
+import itertools
+
+west = 0
+north = 1
+south = 2
+east = 3
+
+
+#  sample from categorical distribution.each row specifies class probabilities
+def categor_sample(prob_n, np_random):
+    prob_n = np.asarray(prob_n)
+    csprob_n = np.cumsum(prob_n)
+    return (csprob_n > np_random.rand()).argmax()
+
+
+class GoldGridworldEnv():
+
+    # limit the state in the specified shape
+    def limit_coordinates(self, coord):
+        coord[0] = min(coord[0], self.shape[0] - 1)
+        coord[0] = max(coord[0], 0)
+        coord[1] = min(coord[1], self.shape[1] - 1)
+        coord[1] = max(coord[1], 0)
+        return coord
+
+    # calculate the new position after moving in the specified direction
+    def calculate_transition_prob(self, current, delta):
+        new_position = np.array(current) + np.array(delta)
+        new_position = self.limit_coordinates(new_position).astype(int)
+        new_state = np.ravel_multi_index(tuple(new_position), self.shape)
+        return [(1.0, new_state, -1.0, False)]
+
+    def __init__(self):
+        self.shape = (5, 5)
+        self.nS = np.prod(self.shape)
+        self.nA = 4
+        self.np_random = np.random
+        nS = self.nS
+        nA = self.nA
+
+        # caalculate transition probabilities for each (state,action)
+        P = {}
+        for s in range(nS):
+            position = np.unravel_index(s, self.shape)
+            P[s] = {a: [] for a in range(nA)}
+            P[s][north] = self.calculate_transition_prob(position, [-1, 0])
+            P[s][east] = self.calculate_transition_prob(position, [0, 1])
+            P[s][south] = self.calculate_transition_prob(position, [1, 0])
+            P[s][west] = self.calculate_transition_prob(position, [0, -1])
+        self.P = P
+        # start in state (4, 0)
+        isd = np.zeros(nS)
+        isd[np.ravel_multi_index((4, 0), self.shape)] = 1.0
+        self.isd = isd
+        self.s = categor_sample(self.isd, self.np_random)
+
+
+# get action_value function according to state_value function
+def v2q(env, v, state=None, discount_factor=0.9):
+    """
+
+    :param env: the current environment
+    :param v: state_value
+    :param state: the current state
+    :param discount_factor: discount factor
+    :return: action_value
+    """
+    # solve for a single state
+    if state is not None:
+        # initialize q for a single state
+        q = np.random.rand(env.nA)
+        for action in range(env.nA):
+            for prob, next_state, reward, done in env.P[state][action]:
+                if next_state == 3:
+                    gold_reward = 9
+                    q[action] = gold_reward
+                    done = True
+                elif next_state == 8:
+                    bomb_reward = -11
+                    q[action] = bomb_reward
+                    done = True
+                else:
+                    q[action] = reward
+                # update q
+                q[action] += prob * discount_factor * v[next_state] * (1 - done)
+    # solve for every states
+    else:
+        # initialize q for every state
+        q = np.random.rand(env.nA)
+        for state in range(env.nS):
+            # use recursion to assign value for the element of q
+            q[state] = v2q(env, v, state, discount_factor)
+    return q
+
+
+# value_iteration
+def deterministic_iterate_value(env, discount_factor=0.9, tolerant_factor=1e-10):
+    """
+    :param env: the current environment
+    :param discount_factor: discount factor
+    :param tolerant_factor: the condition which means the stop of the iteration
+    :return:the optimal policy and state_value
+    """
+    # initialize v for every state
+    v = np.random.rand(env.nS)
+    v[3] = v[8] = 0
+    for t in itertools.count():
+        delta = 0
+        env_list = [i for i in range(env.nS) if i != 3 and i != 8]
+        for s in env_list:
+            # update v using the action which can maximize q
+            vmax = max(v2q(env, v, s, discount_factor))
+            delta = max(delta, abs(v[s] - vmax))
+            v[s] = vmax
+        # when satisfying the the stop condition,exit the while iteration
+        if delta < tolerant_factor:
+            break
+
+    # initialize policy
+    policy = np.zeros((env.nS, env.nA))
+    # calculate the optimal policy
+    for state in range(env.nS):
+        # get the best action which can maximize q under the current state
+        best_action = np.argmax(v2q(env, v, state, discount_factor))
+        policy[state][best_action] = 1.
+    return policy, v
+
+
+if __name__ == '__main__':
+    env = GoldGridworldEnv()
+    temp_policy, v = deterministic_iterate_value(env)
+    policy = []
+    for x in range(temp_policy.shape[0]):
+        for i in range(len(temp_policy[x])):
+            action = ''
+            if temp_policy[x][i] == 1.0:
+                if i == 0:
+                    action = 'w'
+                elif i == 1:
+                    action = 'n'
+                elif i == 2:
+                    action = 's'
+                elif i == 3:
+                    action = 'e'
+                policy.append(action)
+    policy_arr = []
+    v_arr = []
+    for i in range(20, 25):
+        policy_arr.append(policy[i])
+        v_arr.append(v[i])
+    for i in range(15, 20):
+        policy_arr.append(policy[i])
+        v_arr.append(v[i])
+    for i in range(10, 15):
+        policy_arr.append(policy[i])
+        v_arr.append(v[i])
+    for i in range(5, 10):
+        policy_arr.append(policy[i])
+        v_arr.append(v[i])
+    for i in range(0, 5):
+        policy_arr.append(policy[i])
+        v_arr.append(v[i])
+    print("====policy========")
+    print(policy_arr)
+    print("=====v========")
+    v_arr = np.array(v_arr)
+    print(v_arr)
