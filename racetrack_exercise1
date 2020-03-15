@@ -1,0 +1,85 @@
+import numpy as np
+import Homework.racetrack_env as racetrack_env
+from collections import defaultdict
+import matplotlib.pyplot as plt
+import itertools
+
+
+def make_episilon_greedy(Q, epsilon, nA):
+    def policy_fn(state):
+        probs = np.ones(nA, dtype=float) * epsilon / nA
+        best_action = np.argmax(Q[state])
+        probs[best_action] += (1.0 - epsilon)
+        return probs
+
+    return policy_fn
+
+
+def on_policy_first_visit_MC_control(env, num_episodes=150, discount_factor=0.9, epsilon=0.1):
+    # count the  Q
+    q_value = defaultdict(float)
+    # count the times
+    # arbitrarily initialize Q using np.random
+    Q = defaultdict(lambda: np.random.randint(10, size=len(env.get_actions())))
+    # save the result for each episode
+    cr_episodes = []
+    for i_episodes in range(1, 1 + num_episodes):
+        state = env.reset()
+        episode = []
+        cr = 0
+        epsilon_policy = make_episilon_greedy(Q, epsilon, len(env.get_actions()))
+        # using epsilon policy to iterate to generate an episode
+        for t in itertools.count():
+            # use epsilon greedy to get the action probability
+            action_probs = epsilon_policy(state)
+            # arbitrarily choose an action from the action probability
+            action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
+            next_state, reward, done = env.step(action)
+            cr += reward
+            episode.append((state, action, reward))
+            if done:
+                break
+            state = next_state
+
+        cr_episodes.append(cr)
+        # save the pair (s,a) in the episode above
+        sa_in_episode = [(tuple(x[0]), x[1]) for x in episode]
+        # get the reserve sa_in_episode
+        temp_sa = set(sa_in_episode[::-1])
+        # record the state which appears on its first time
+        record_state = []
+        # iterate each (s,a)
+        for state, action in temp_sa:
+            Gt = 0
+            # Firstly,assign reward for the current (s,a)
+            for x in episode:
+                if state == x[0] and action == x[1]:
+                    Gt = x[2]
+            sa_pair = (state, action)
+            # find the index of the state which is first-visited in the episode
+            first_occurence_index = next(i for i, x in enumerate(episode) if x[0] == state)
+            for x in range(first_occurence_index, len(episode)):
+                Gt += episode[x][2] * (discount_factor + 0.1) ** (first_occurence_index - x)
+            if state not in record_state:
+                q_value[sa_pair] += Gt
+            Q[state][action] = q_value[sa_pair]
+            record_state.append(state)
+    return cr_episodes
+
+
+if __name__ == '__main__':
+    env = racetrack_env.RacetrackEnv()
+    cr_episodes = np.zeros(150)
+    for t in range(20):
+        i_cr_episodes = on_policy_first_visit_MC_control(env)
+        for i in range(150):
+            cr_episodes[i] += i_cr_episodes[i] / 20
+    x_data = range(150)
+    y_data = []
+    for value in cr_episodes:
+        y_data.append(value)
+    plt.plot(x_data, y_data, color='b')
+    plt.xlabel('episodes')
+    plt.ylabel('cumulative reward')
+    plt.title('20 agents performances')
+    plt.show()
