@@ -1,0 +1,341 @@
+import numpy as np
+import itertools
+
+rows = 3
+cols = 3
+shape = (rows, cols)
+
+
+class Tic_Tac_Toe:
+    def __init__(self):
+        # 1 represents a chessman of the player who moves first,
+        # -1 represents a chessman of another player
+        # 0 represents an empty position
+        # symbol:1 represents circle, -1 represents cross
+        self.data = np.zeros(shape)
+        self.winner = None
+        self.hash_val = None
+        self.end = None
+
+    # check whether a player has won the game, or it's a tie
+    def is_end(self):
+        if self.end is not None:
+            return self.end
+        # save the sum of each row.each column and each diagonal
+        results = []
+        # check row
+        for i in range(0, rows):
+            results.append(np.sum(self.data[i, :]))
+        # check columns
+        for i in range(0, cols):
+            results.append(np.sum(self.data[:, i]))
+
+        # check diagonals
+        results.append(0)
+        for i in range(0, cols):
+            results[-1] += self.data[i, i]
+        results.append(0)
+        for i in range(0, rows):
+            results[-1] += self.data[i, cols - 1 - i]
+
+        for result in results:
+            if result == 3:
+                self.winner = 1
+                self.end = True
+                return self.end
+            if result == -3:
+                self.winner = -1
+                self.end = True
+                return self.end
+
+        # check whether it's a tie
+        sum = np.sum(np.abs(self.data))
+        if sum == rows * cols:
+            self.winner = 0
+            self.end = True
+            return self.end
+
+        # game is going on
+        self.end = False
+        return self.end
+
+    #     put the symbol in the specified position
+    def next_state(self, i, j, symbol):
+        next_state = Tic_Tac_Toe()
+        next_state.data = np.copy(self.data)
+        next_state.data[i, j] = symbol
+        # self.data = next_state.data
+        return next_state
+
+    # print the board
+    def print(self):
+        for i in range(0, rows):
+            print('-------------')
+            out = '| '
+            for j in range(0, cols):
+                if self.data[i, j] == 1:
+                    res = 'o'
+                if self.data[i, j] == 0:
+                    res = ' '
+                if self.data[i, j] == -1:
+                    res = 'x'
+                out += res + ' | '
+            print(out)
+        print('-------------')
+
+
+# random player
+class RandomPlayer:
+    def __init__(self):
+        self.states = []
+
+    # at the start of the game,reset the state
+    def reset(self):
+        self.states = []
+
+    # save the states before
+    def set_state(self, state):
+        self.states.append(state)
+
+    # choose a random action and return the i, j of the grid square
+    def act(self, symbol):
+        state = self.states[-1]
+        next_states = []
+        next_positions = []
+        #       Firsly,get the empty square
+        for i in range(rows):
+            for j in range(cols):
+                if state.data[i, j] == 0:
+                    next_states.append(state.next_state(i, j, symbol))
+                    next_positions.append([i, j, symbol])
+
+        #       ranmdly choose an action to move
+        action = next_positions[np.random.randint(len(next_positions))]
+        return action
+
+
+def make_epsilon_greedy_policy(Q, epsilon, nA):
+    def policy_fn(state):
+        probs = np.ones(nA, dtype=float) * epsilon / nA
+        best_action = np.argmax(Q[state])
+        probs[best_action] += (1 - epsilon)
+        return probs
+
+    return policy_fn
+
+
+# get the best action which can maximize Q
+def greedy_policy(q):
+    best_action = np.argmax(q)
+    return best_action
+
+
+def get_next_state_after_x_move(temp_state, symbol=1):
+    next_positions = []
+    for i in range(rows):
+        for j in range(cols):
+            if temp_state.data[i, j] == 0:
+                next_positions.append([i, j, symbol])
+    flag = False
+    next_state = Tic_Tac_Toe()
+    if next_positions:
+        temp_action = next_positions[np.random.randint(len(next_positions))]
+        next_state = temp_state.next_state(temp_action[0], temp_action[1], symbol)
+    else:
+        flag = True
+    return next_state, flag
+
+
+# choose a random action and return the i, j of the grid square
+def get_action(Q, state, symbol):
+    next_states = []
+    next_positions = []
+    # Firsly,get the empty square
+    for i in range(rows):
+        for j in range(cols):
+            if state.data[i, j] == 0:
+                next_states.append(state.next_state(i, j, symbol))
+                next_positions.append([i, j, symbol])
+    next_action_index = 0
+    next_action = [0, 0, symbol]
+    flag = False
+    if next_positions:
+        if state not in Q.keys():
+            Q[state] = np.random.rand(len(next_positions))
+            next_action_index = greedy_policy(Q[state])
+            next_action = next_positions[next_action_index]
+    else:
+        Q[state] = 0
+        flag = True
+    return next_action, next_action_index, Q[state], flag
+
+
+def Q_learning(curr_state, next_states, next_actions, num_episodes=150, discount_factor=0.9, alpha=0.2, epsilon=0.1, symbol=-1):
+    # sava the q_value of the next state
+    next_state_Q_dict = {}
+    # iterate each episode
+    Q = dict()
+    for i_episode in range(num_episodes):
+
+        # arbitrarily initialize Q using np.random
+        Q[curr_state] = np.random.rand(len(next_actions))
+        # assign 0 for Q(terminal, *)
+        terminal_state_list = []
+        for state in next_states:
+            is_end = state.is_end()
+            if is_end:
+                terminal_state_list.append(state)
+        for terminal_state in terminal_state_list:
+            Q[terminal_state] = 0
+        # # save the result for each episode
+        # cr_episodes = []
+        epsilon_policy = make_epsilon_greedy_policy(Q, epsilon, len(next_actions))
+        # calculate the cumulative reward
+        # cr = 0
+        # use epsilon greedy to get the action probability
+        action_probs = epsilon_policy(curr_state)
+        # arbitrarily choose an action from the action probability
+        action_index = np.random.choice(len(action_probs), p=action_probs)
+        action = next_actions[action_index]
+        for t in itertools.count():
+            if curr_state not in terminal_state_list:
+                temp_state = curr_state.next_state(action[0], action[1], symbol)
+                next_state, flag_end = get_next_state_after_x_move(temp_state)
+                if flag_end:
+                    break
+                next_action, next_action_index, Q[next_state], flag_end = get_action(Q, next_state, symbol)
+                if flag_end:
+                    break
+                temp2_state = next_state.next_state(next_action[0], next_action[1], symbol)
+                next2_state, flag_end = get_next_state_after_x_move(temp2_state)
+                if flag_end:
+                    break
+                next2_action, next2_action_index, Q[next2_state], flag_end = get_action(Q, next2_state,
+                                                                                                 symbol)
+                if flag_end:
+                    break
+                td_target = discount_factor ** 2 * Q[next2_state][next2_action_index]
+                td_delta = td_target - Q[curr_state][action_index]
+                Q[curr_state][action_index] += alpha * td_delta
+                if next2_state.is_end() or next_state.is_end():
+                    break
+                action = next_action
+                curr_state = next_state
+                action_index = next_action_index
+            else:
+                continue
+    for next_state in next_states:
+        for state in Q.keys():
+            if state.data.all() == next_state.data.all():
+                next_state_Q_dict[state] = np.amax(Q[state])
+    best_state = max(next_state_Q_dict.items(), key=lambda x: x[1])[0]
+    return best_state
+
+
+# Q-learning player
+class QLPlayer:
+    def __init__(self):
+        self.states = []
+
+    # at the start of the game,reset the state
+    def reset(self):
+        self.states = []
+
+    # save the states before
+    def set_state(self, state):
+        self.states.append(state)
+
+    # choose a random action and return the i, j of the grid square
+    def act(self, symbol):
+        curr_state = self.states[-1]
+        next_states = []
+        next_positions = []
+        # Firsly,get the empty square
+        for i in range(rows):
+            for j in range(cols):
+                if curr_state.data[i, j] == 0:
+                    next_states.append(curr_state.next_state(i, j, symbol))
+                    next_positions.append([i, j, symbol])
+
+        # ranmdly choose an action to move
+        best_state = Q_learning(curr_state, next_states, next_positions)
+        index = 0
+        for i in range(len(next_states)):
+            if best_state == next_states[i]:
+                index = i
+        best_action = next_positions[index]
+        return best_action
+
+
+class ChessGame:
+    def __init__(self, player1, player2):
+        self.p1 = player1  # random Player X
+        self.p2 = player2  # human Player O
+        self.current_player = None
+        self.p1_symbol = 1  # symbol:x
+        self.p2_symbol = -1  # symbol:o
+        self.current_state = Tic_Tac_Toe()
+        # generate two random numbers to decide who to move first
+        self.random_number = np.random.randint(1, 10, size=2)
+
+    def reset(self):
+        self.p1.reset()
+        self.p2.reset()
+
+    def alternate(self):
+        while True:
+            if self.random_number[0] >= self.random_number[1]:
+                yield self.p1
+                yield self.p2
+            else:
+                yield self.p2
+                yield self.p1
+
+    # @print: if True, print each board during the game
+    def play(self, print=True):
+        alternator = self.alternate()
+        self.reset()
+        current_state = Tic_Tac_Toe()
+        self.p1.set_state(current_state)
+        self.p2.set_state(current_state)
+        for t in itertools.count():
+            player = next(alternator)
+            # if print:
+            #     current_state.print()
+            if player == self.p1:
+                [i, j, symbol] = player.act(self.p1_symbol)
+            else:
+                [i, j, symbol] = player.act(self.p2_symbol)
+            next_state = current_state.next_state(i, j, symbol)
+            is_end = next_state.is_end()
+            self.p1.set_state(next_state)
+            self.p2.set_state(next_state)
+            if is_end:
+                # tie
+                x_reward = 0
+                o_reward = 0
+                if print:
+                    next_state.print()
+                if next_state.winner == -1:  # o win
+                    x_reward = -1
+                    o_reward = 1
+                elif next_state.winner == 1:  # o loss
+                    x_reward = 1
+                    o_reward = -1
+                return x_reward, o_reward
+            current_state = next_state
+
+
+if __name__ == '__main__':
+    acc_x_reward = 0
+    acc_o_reward = 0
+    for t in range(100):
+        player_x = RandomPlayer()
+        player_o = QLPlayer()
+        chess = ChessGame(player_x, player_o)
+        chess.reset()
+        x_reward, o_reward = chess.play()
+        acc_x_reward += x_reward
+        acc_o_reward += o_reward
+    print('cumulative reward of Player X:{}'.format(acc_x_reward))
+    print('cumulative reward of Player o:{}'.format(acc_o_reward))
