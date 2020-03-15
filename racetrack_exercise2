@@ -1,0 +1,74 @@
+import numpy as np
+import Homework.racetrack_env as racetrack_env
+from collections import defaultdict
+import itertools
+import matplotlib.pyplot as plt
+
+
+def make_epsilon_greedy_policy(Q, epsilon, nA):
+    def policy_fn(state):
+        probs = np.ones(nA, dtype=float) * epsilon / nA
+        best_action = np.argmax(Q[state])
+        probs[best_action] += (1 - epsilon)
+        return probs
+
+    return policy_fn
+
+
+def sarsa(env, num_episodes=150, discount_factor=0.9, alpha=0.2, epsilon=0.1):
+    # arbitrarily initialize Q using np.random
+    Q = defaultdict(lambda: np.random.rand(len(env.get_actions())))
+    # assign 0 for Q(terminal, *)
+    terminal_state_tuple = np.where(env.track == 3)
+    x_tu = terminal_state_tuple[0]
+    y_tu = terminal_state_tuple[1]
+    terminal_state_list = []
+    for x, y in zip(x_tu, y_tu):
+        terminal_state_list.append((x, y, 0, 0))
+    for terminal_state in terminal_state_list:
+        Q[terminal_state] = np.zeros(len(env.get_actions()))
+    # save the result for each episode
+    cr_episodes = []
+    policy = make_epsilon_greedy_policy(Q, epsilon, len(env.get_actions()))
+    # iterate each episode
+    for i_episode in range(num_episodes):
+        state = env.reset()
+        # calculate the cumulative reward
+        cr = 0
+        # use epsilon greedy to get the action probability
+        action_probs = policy(state)
+        # arbitrarily choose an action from the action probability
+        action = np.random.choice(len(action_probs), p=action_probs)
+        for t in itertools.count():
+            next_state, reward, done = env.step(action)
+            cr += reward
+            next_action_probs = policy(next_state)
+            next_action = np.random.choice(len(next_action_probs), p=next_action_probs)
+            td_target = reward + discount_factor * Q[next_state][next_action]
+            td_delta = td_target - Q[state][action]
+            if state not in terminal_state_list:
+                Q[state][action] += alpha * td_delta
+            if done:
+                break
+            action = next_action
+            state = next_state
+        cr_episodes.append(cr)
+    return cr_episodes
+
+
+if __name__ == '__main__':
+    env = racetrack_env.RacetrackEnv()
+    cr_episodes = np.zeros(150)
+    for t in range(20):
+        i_cr_episodes = sarsa(env)
+        for i in range(150):
+            cr_episodes[i] += i_cr_episodes[i] / 20
+    x_data = range(150)
+    y_data = []
+    for value in cr_episodes:
+        y_data.append(value)
+    plt.plot(x_data, y_data, color='b')
+    plt.xlabel('episodes')
+    plt.ylabel('cumulative reward')
+    plt.title('20 agents performances')
+    plt.show()
